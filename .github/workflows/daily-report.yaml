@@ -1,0 +1,69 @@
+
+
+# This is a basic workflow to help you get started with Actions
+
+name: Daily Track Report
+
+on:
+  push:
+    branches: [ "main" ]
+  schedule:
+  - cron: "0 18 * * *"
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache tracked versions
+        uses: actions/cache@v4
+        with:
+          path: .version
+          key: track-version-history
+
+      - name: PrepareEnv
+        run: |
+          pip3 install lastversion
+
+      - name: Track
+        env:
+          GITHUB_API_TOKEN: ${{ github.token }}
+        run: |
+          ./track.sh apache/httpd     https://github.com/apache/httpd
+          ./track.sh apache/apr       https://github.com/apache/apr
+          ./track.sh apache/apr-util  https://github.com/apache/apr-util
+          ./track.sh libexpat         https://github.com/libexpat/libexpat
+          ./track.sh pcre2            https://github.com/PCRE2Project/pcre2
+          ./track.sh FFmpeg           https://github.com/FFmpeg/FFmpeg
+          ./track.sh Openssl          https://github.com/openssl/openssl
+          ./track.sh libsrt           https://github.com/Haivision/srt
+
+      - name: Summary
+        id: summary
+        run: |
+          echo "RELEASE_TAG=v`TZ=Asia/Shanghai date +%Y%m%d.%H%M`" >> "$GITHUB_ENV"
+          cp .version version
+          ./summary.sh CHANGELOG.md
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: ${{ !cancelled() && steps.summary.conclusion == 'success' }}
+        with:
+          body_path: CHANGELOG.md
+          tag_name: ${{ env.RELEASE_TAG }}
+
+      - name: Artifact track status
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: track-status
+          path: version
+  
+      - name: Cleanup workflow runs for current repo
+        uses: Mattraks/delete-workflow-runs@v2
+        if: ${{ !cancelled() }}
+        with:
+          retain_days: 0
+          keep_minimum_runs: 3
